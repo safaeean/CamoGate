@@ -16,7 +16,7 @@
 
 کافی است این فایل `README.md` را در یک ریپازیتوری گیت‌هاب قرار دهید. سپس اسکریپت پایتون را اجرا کنید؛ اسکریپت با خواندن فایل `README.md`، تمام تکه‌ها را از طریق گیت‌هاب دانلود کرده و پس از ادغام، فایل اصلی را بازسازی می‌کند — همه اینها بدون نیاز به اینترنت پرسرعت و در بستر محدود ملی.
 
-**✨ ویژگی‌ها:**
+### **✨ ویژگی‌ها:** 
 
 *   دانلود فایل‌ها از طریق محدودیت‌های شبکه
 *   بررسی صحت فایل با هش
@@ -83,16 +83,16 @@ curl -X POST "https://api.telegram.org/bot[TOKEN]/setWebhook?url=https://[YOUR_W
 pip install requests
 ```
 
-### نحوه استفاده
+## نحوه استفاده
 
-\# روش 1: لینک مستقیم README
+### روش 1: لینک مستقیم README
 
 
 ```
 python github_camo_downloader_final.py "https://raw.githubusercontent.com/USER/REPO/main/README.md"
 ```
     
-# روش 2: بدون آرگومان (ورودی تعاملی)
+### روش 2: بدون آرگومان (ورودی تعاملی)
 
 ```aiignore
 python github_camo_downloader_final.py
