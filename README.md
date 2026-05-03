@@ -78,10 +78,14 @@ pip install requests
 
 \# روش 1: لینک مستقیم README
 
-``python github_camo_downloader_final.py "https://raw.githubusercontent.com/USER/REPO/main/README.md"``
+``
+python github_camo_downloader_final.py "https://raw.githubusercontent.com/USER/REPO/main/README.md"
+``
     
 \# روش 2: بدون آرگومان (ورودی تعاملی) 
-``python github\_camo\_downloader\_final.py``
+``
+python github_camo_downloader_final.py
+``
 
 ### خروجی اسکریپت
 ``
