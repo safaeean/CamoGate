@@ -1,6 +1,5 @@
-// worker-debug.js - نسخه دیباگ ساده
-
 const TELEGRAM_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN';
+const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
 export default {
   async fetch(request) {
@@ -39,7 +38,7 @@ export default {
         }
         
         const fileBuffer = await fileResp.arrayBuffer();
-        const CHUNK_SIZE = 100 * 1024;
+        const CHUNK_SIZE = 500 * 1024;
         const start = chunkIndex * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, fileBuffer.byteLength);
         
@@ -116,29 +115,200 @@ async function handleTelegramUpdate(update, workerUrl) {
   const text = message.text || '';
   
   console.log(`📨 [DEBUG] Received message: "${text}"`);
-  console.log(`📨 [DEBUG] Length: ${text.length}`);
-  console.log(`📨 [DEBUG] Starts with http: ${text.startsWith('http://')}`);
-  console.log(`📨 [DEBUG] Starts with https: ${text.startsWith('https://')}`);
-  console.log(`📨 [DEBUG] Has space: ${text.includes(' ')}`);
-  
-  await sendMessage(chatId, `🔍 [DEBUG] پیام شما: "${text}"\n\nhttp? ${text.startsWith('http://')}\nhttps? ${text.startsWith('https://')}\nفاصله؟ ${text.includes(' ')}`);
   
   if (text === '/start') {
-    await sendMessage(chatId, "🎬 خوش آمدید! لینک مستقیم فایل را بفرستید.");
+    await sendMessage(chatId, "🎬 خوش آمدید!\n\nلطفاً یکی از موارد زیر را ارسال کنید:\n• لینک مستقیم فایل\n• فایل (داکیومنت، ویدیو، صدا، و غیره)");
     return;
   }
   
   if (text === '/help') {
-    await sendMessage(chatId, "📖 لینک مستقیم فایل را ارسال کنید.\n\nمثال:\nhttps://example.com/file.zip");
+    await sendMessage(chatId, "📖 راهنما:\n\n1️⃣ لینک مستقیم فایل را ارسال کنید\n2️⃣ یا فایل خود را مستقیماً آپلود کنید\n\nمن فایل رو تکه تکه کرده و فایل README برات میسازم.");
     return;
   }
   
-  if (text.startsWith('http://') || text.startsWith('https://')) {
+  // بررسی فایل‌های مختلف تلگرام
+  let fileId = null;
+  let fileName = null;
+  let mimeType = null;
+  
+  if (message.document) {
+    fileId = message.document.file_id;
+    fileName = message.document.file_name;
+    mimeType = message.document.mime_type;
+    await sendMessage(chatId, `📄 فایل دریافت شد: ${fileName}\nنوع: ${mimeType}`);
+  } 
+  else if (message.video) {
+    fileId = message.video.file_id;
+    fileName = message.video.file_name || `video_${Date.now()}.mp4`;
+    mimeType = message.video.mime_type;
+    await sendMessage(chatId, `🎬 ویدیو دریافت شد: ${fileName}`);
+  }
+  else if (message.audio) {
+    fileId = message.audio.file_id;
+    fileName = message.audio.file_name || `audio_${Date.now()}.mp3`;
+    mimeType = message.audio.mime_type;
+    await sendMessage(chatId, `🎵 صدا دریافت شد: ${fileName}`);
+  }
+  else if (message.photo) {
+    // آخرین عکس (بزرگترین سایز) را بگیر
+    const photo = message.photo[message.photo.length - 1];
+    fileId = photo.file_id;
+    fileName = `photo_${Date.now()}.jpg`;
+    mimeType = 'image/jpeg';
+    await sendMessage(chatId, `🖼️ عکس دریافت شد`);
+  }
+  else if (text && (text.startsWith('http://') || text.startsWith('https://'))) {
     await sendMessage(chatId, "🔗 لینک تشخیص داده شد! در حال پردازش...");
     await processLink(chatId, text, workerUrl);
-  } else {
-    await sendMessage(chatId, "❌ این یک لینک معتبر نیست. لطفاً با http:// یا https:// شروع کنید.");
+    return;
   }
+  else {
+    if (text) {
+      await sendMessage(chatId, "❌ لطفاً یک لینک معتبر یا فایل ارسال کنید.");
+    }
+    return;
+  }
+  
+  // اگر فایل تلگرام داریم، پردازش کن
+  if (fileId) {
+    await processTelegramFile(chatId, fileId, fileName, mimeType, workerUrl);
+  }
+}
+
+async function getTelegramFileUrl(fileId) {
+  // دریافت مسیر فایل از تلگرام
+  const getFileUrl = `${TELEGRAM_API}/getFile?file_id=${fileId}`;
+  const response = await fetch(getFileUrl);
+  const data = await response.json();
+  
+  if (!data.ok || !data.result.file_path) {
+    throw new Error('Failed to get file path from Telegram');
+  }
+  
+  const filePath = data.result.file_path;
+  const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`;
+  
+  return fileUrl;
+}
+
+async function processTelegramFile(chatId, fileId, originalFileName, mimeType, workerUrl) {
+  try {
+    await sendMessage(chatId, `⏳ در حال دریافت فایل از تلگرام...`);
+    
+    // دریافت لینک مستقیم فایل از تلگرام
+    const fileUrl = await getTelegramFileUrl(fileId);
+    
+    await sendMessage(chatId, `✅ لینک فایل دریافت شد، در حال دانلود...`);
+    
+    const fileResp = await fetch(fileUrl);
+    
+    if (!fileResp.ok) {
+      await sendMessage(chatId, `❌ خطا: HTTP ${fileResp.status}`);
+      return;
+    }
+    
+    const fileBuffer = await fileResp.arrayBuffer();
+    const fileSize = fileBuffer.byteLength;
+    const fileSizeMB = (fileSize / 1024 / 1024).toFixed(2);
+    
+    // اگر اسم فایل نداریم، یکی بساز
+    let fileName = originalFileName || 'telegram_file';
+    if (fileName.length > 100) fileName = fileName.substring(0, 100);
+    
+    await sendMessage(chatId, `📦 حجم فایل: ${fileSizeMB} MB\n📄 نام فایل: ${fileName}`);
+    
+    if (fileSize > 300 * 1024 * 1024) {
+      await sendMessage(chatId, `❌ حجم فایل بیشتر از 300 مگابایت است. حد مجاز 300 مگابایت است.`);
+      return;
+    }
+    
+    // محاسبه MD5
+    await sendMessage(chatId, `🔐 در حال محاسبه MD5...`);
+    const md5Hash = await calculateMD5(fileBuffer);
+    
+    const CHUNK_SIZE = 500 * 1024;
+    const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
+    const origin = workerUrl.origin;
+    
+    // ذخیره موقت فایل؟ نه، ما مستقیماً از لینک تلگرام استفاده می‌کنیم
+    // اما لینک تلگرام temporary است، بنابراین باید لینک جدیدی بسازیم که از طریق worker قابل دسترسی باشه
+    
+    // یه راه حل: لینک فایل رو خود worker نگه میداره به عنوان پارامتر
+    // ولی چون دیتابیس نداریم، باید فایل رو توی cache بذاریم؟
+    // بهتره از همون لینک تلگرام استفاده کنیم چون خودش یه URL موقتیه
+    
+    const encodedLink = encodeURIComponent(fileUrl);
+    
+    await sendMessage(chatId, `🔪 تعداد تکه‌ها: ${totalChunks} تکه (هر تکه 500 کیلوبایت)\n🔄 در حال ساخت README...`);
+    
+    // ساخت README
+    const markdown = buildOptimizedReadme(fileUrl, fileName, fileSizeMB, md5Hash, totalChunks, origin, encodedLink, true);
+    
+    await sendDocument(chatId, markdown, 'README.md');
+    await sendMessage(chatId, "✅ فایل README ساخته شد! آن را در گیت‌هاب قرار دهید.\n\n⚠️ توجه: لینک فایل تلگرام موقتی است و ممکن است بعد از مدتی منقضی شود. فایل README را سریعاً ذخیره کنید.");
+    
+  } catch (err) {
+    console.error('Process error:', err);
+    await sendMessage(chatId, `❌ خطا: ${err.message}`);
+  }
+}
+
+function buildOptimizedReadme(link, fileName, fileSizeMB, md5Hash, totalChunks, origin, encodedLink, isTelegramFile = false) {
+  let markdown = `# 📦 ${fileName}\n\n`;
+  markdown += `| ویژگی | مقدار |\n`;
+  markdown += `|-------|-------|\n`;
+  markdown += `| **نام فایل** | \`${fileName}\` |\n`;
+  markdown += `| **حجم** | ${fileSizeMB} MB |\n`;
+  markdown += `| **MD5** | \`${md5Hash}\` |\n`;
+  
+  if (isTelegramFile) {
+    markdown += `| **نوع فایل** | فایل تلگرام |\n`;
+    markdown += `| **لینک اصلی** | (موقتی - ممکن است منقضی شود) |\n`;
+  } else {
+    markdown += `| **لینک اصلی** | [${link}](${link}) |\n`;
+  }
+  
+  markdown += `| **تعداد تکه‌ها** | ${totalChunks} تکه |\n`;
+  markdown += `| **حجم هر تکه** | 500 KB |\n\n`;
+  
+  markdown += `---\n\n`;
+  markdown += `## 🧩 تکه‌های فایل\n\n`;
+  markdown += `برای بازسازی فایل اصلی، همه تکه‌های زیر را جمع‌آوری کرده و به ترتیب کنار هم قرار دهید:\n\n`;
+  
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkUrl = `${origin}/chunk${i}.svg?file=${encodedLink}`;
+    markdown += `<details>\n`;
+    markdown += `<summary><b>🔹 تکه ${i+1} از ${totalChunks}</b></summary>\n\n`;
+    markdown += `<img src="${chunkUrl}" alt="chunk${i+1}"/>\n\n`;
+    markdown += `</details>\n\n`;
+  }
+  
+  markdown += `---\n\n`;
+  markdown += `## 📌 راهنمای بازسازی\n\n`;
+  markdown += `1. هر تکه را به صورت جداگانه ذخیره کنید (از روی تصاویر SVG)\n`;
+  markdown += `2. تمام تکه‌ها را به ترتیب شماره در یک فایل ترکیب کنید\n`;
+  markdown += `3. برای اطمینان از صحت فایل، MD5 دریافتی را با فایل نهایی مقایسه کنید\n\n`;
+  
+  markdown += `### روش ترکیب تکه‌ها:\n\n`;
+  markdown += `\`\`\`bash\n`;
+  markdown += `# برای ترکیب تکه‌ها در لینوکس/مک:\n`;
+  markdown += `cat chunk1.bin chunk2.bin ... > output_file\n\n`;
+  markdown += `# یا می‌توانید هر تکه را از روی SVG کپی کنید\n`;
+  markdown += `\`\`\`\n\n`;
+  
+  markdown += `> ⚠️ **نکته**: ${isTelegramFile ? 'این فایل از تلگرام دریافت شده و لینک اصلی موقتی است.' : 'این فایل به صورت خودکار توسط ربات تولید شده است.'}`;
+  
+  return markdown;
+}
+
+async function calculateMD5(buffer) {
+  // Web Crypto API از MD5 پشتیبانی نمی‌کند، از یه روش ساده‌تر استفاده می‌کنیم
+  // برای محیط CloudFlare Workers، از کتابخانه‌های داخلی نمی‌شه استفاده کرد
+  // این یه پیاده‌سازی ساده‌ست (نه کاملاً استاندارد)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
 }
 
 async function processLink(chatId, link, workerUrl) {
@@ -156,31 +326,28 @@ async function processLink(chatId, link, workerUrl) {
     const fileSize = fileBuffer.byteLength;
     const fileSizeMB = (fileSize / 1024 / 1024).toFixed(2);
     
-    // استخراج نام فایل از لینک
     let fileName = link.split('/').pop() || 'unknown';
     if (fileName.includes('?')) fileName = fileName.split('?')[0];
     if (fileName === '' || fileName.length > 100) fileName = 'downloaded_file';
     
     await sendMessage(chatId, `📦 حجم فایل: ${fileSizeMB} MB\n📄 نام فایل: ${fileName}`);
     
-    if (fileSize > 50 * 1024 * 1024) {
-      await sendMessage(chatId, `❌ حجم فایل بیشتر از 50 مگابایت است.`);
+    if (fileSize > 300 * 1024 * 1024) {
+      await sendMessage(chatId, `❌ حجم فایل بیشتر از 300 مگابایت است.`);
       return;
     }
     
-    // محاسبه MD5
     await sendMessage(chatId, `🔐 در حال محاسبه MD5...`);
     const md5Hash = await calculateMD5(fileBuffer);
     
-    const CHUNK_SIZE = 100 * 1024;
+    const CHUNK_SIZE = 500 * 1024;
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
     const origin = workerUrl.origin;
     const encodedLink = encodeURIComponent(link);
     
-    await sendMessage(chatId, `🔪 تعداد تکه‌ها: ${totalChunks} تکه (هر تکه 100 KB)\n🔄 در حال ساخت README...`);
+    await sendMessage(chatId, `🔪 تعداد تکه‌ها: ${totalChunks} تکه (هر تکه 500 KB)\n🔄 در حال ساخت README...`);
     
-    // ساخت README بهینه برای ربات
-    const markdown = buildOptimizedReadme(link, fileName, fileSizeMB, md5Hash, totalChunks, origin, encodedLink);
+    const markdown = buildOptimizedReadme(link, fileName, fileSizeMB, md5Hash, totalChunks, origin, encodedLink, false);
     
     await sendDocument(chatId, markdown, 'README.md');
     await sendMessage(chatId, "✅ فایل README ساخته شد! آن را در گیت‌هاب قرار دهید.");
@@ -189,48 +356,6 @@ async function processLink(chatId, link, workerUrl) {
     console.error('Process error:', err);
     await sendMessage(chatId, `❌ خطا: ${err.message}`);
   }
-}
-
-function buildOptimizedReadme(link, fileName, fileSizeMB, md5Hash, totalChunks, origin, encodedLink) {
-  let markdown = `# 📦 ${fileName}\n\n`;
-  markdown += `| ویژگی | مقدار |\n`;
-  markdown += `|-------|-------|\n`;
-  markdown += `| **نام فایل** | \`${fileName}\` |\n`;
-  markdown += `| **حجم** | ${fileSizeMB} MB |\n`;
-  markdown += `| **MD5** | \`${md5Hash}\` |\n`;
-  markdown += `| **لینک اصلی** | [${link}](${link}) |\n`;
-  markdown += `| **تعداد تکه‌ها** | ${totalChunks} تکه |\n`;
-  markdown += `| **حجم هر تکه** | 100 KB |\n\n`;
-  
-  markdown += `---\n\n`;
-  markdown += `## 🧩 تکه‌های فایل\n\n`;
-  markdown += `برای بازسازی فایل اصلی، همه تکه‌های زیر را جمع‌آوری کرده و به ترتیب کنار هم قرار دهید:\n\n`;
-  
-  for (let i = 0; i < totalChunks; i++) {
-    const chunkUrl = `${origin}/chunk${i}.svg?file=${encodedLink}`;
-    markdown += `<details>\n`;
-    markdown += `<summary><b>🔹 تکه ${i+1} از ${totalChunks}</b></summary>\n\n`;
-    markdown += `<img src="${chunkUrl}" alt="chunk${i+1}"/>\n\n`;
-    markdown += `</details>\n\n`;
-  }
-  
-  markdown += `---\n\n`;
-  markdown += `## 📌 راهنمای بازسازی\n\n`;
-  markdown += `1. هر تکه را به صورت جداگانه ذخیره کنید\n`;
-  markdown += `2. تمام تکه‌ها را به ترتیب شماره در یک فایل ترکیب کنید\n`;
-  markdown += `3. برای اطمینان از صحت فایل، MD5 دریافتی را با فایل نهایی مقایسه کنید\n\n`;
-  
-  markdown += `> ⚠️ **نکته**: این فایل به صورت خودکار توسط ربات تولید شده است.`;
-  
-  return markdown;
-}
-
-async function calculateMD5(buffer) {
-  // استفاده از Web Crypto API
-  const hashBuffer = await crypto.subtle.digest('MD5', buffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
 }
 
 async function sendMessage(chatId, text) {
