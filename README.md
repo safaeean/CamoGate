@@ -39,11 +39,11 @@
 
 ### مرحله 3: تنظیم Webhook
 
-‍‍‍‍‍```
+‍‍‍‍‍``
 
 curl -X POST "https://api.telegram.org/bot[TOKEN]/setWebhook?url=https://[YOUR_WORKER].workers.dev/webhook"
 
-```
+``
 
 **✅ ربات شما آماده است!** حالا در تلگرام به ربات `/start` بزنید.
 
@@ -80,21 +80,27 @@ pip install requests
 
 \# روش 1: لینک مستقیم README
 
+
 ``
 python github_camo_downloader_final.py "https://raw.githubusercontent.com/USER/REPO/main/README.md"
 ``
     
-\# روش 2: بدون آرگومان (ورودی تعاملی) 
+# روش 2: بدون آرگومان (ورودی تعاملی)
+
 ``
 python github_camo_downloader_final.py
 ``
 
+
 ### خروجی اسکریپت
+
 ``
 ✅ فایل بازسازی شد: myfile.zip
 🔐 MD5 محاسبه شده: 5d41402abc4b2a76b9719d911017c592
 ✅ تأیید هش: فایل به درستی بازسازی شده است!
 ``
+
+
 * * *
 
 🔧 عیب‌یابی
