@@ -40,9 +40,7 @@
 ### مرحله 3: تنظیم Webhook
 
 ‍‍‍‍‍``
-
 curl -X POST "https://api.telegram.org/bot[TOKEN]/setWebhook?url=https://[YOUR_WORKER].workers.dev/webhook"
-
 ``
 
 **✅ ربات شما آماده است!** حالا در تلگرام به ربات `/start` بزنید.
